@@ -1,0 +1,6 @@
+*.bin 
+*.parm 
+*.tlog 
+*.tlog.raw
+__pycache__
+*terrain/
