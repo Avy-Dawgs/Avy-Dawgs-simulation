@@ -28,7 +28,7 @@ def main():
     # comment out if running SITL separately
     # ** this must happen after TCP listener initiated **
     # runs MAVproxy ground station, which forwards connection to this script via port 14550
-    subprocess.Popen(["sim_vehicle.py", "-v", "ArduCopter", "-C", "tcp:localhost:5760", "--out", "tcp:localhost:14550", "--console", "--map"])
+    # subprocess.Popen(["sim_vehicle.py", "-v", "ArduCopter", "-C", "tcp:localhost:5760", "--out", "tcp:localhost:14550", "--console", "--map"])
 
     master.wait_heartbeat()
     print("Heartbeat received")
@@ -46,10 +46,12 @@ def main():
     print("EKF ready") 
 
     # read initial GPS coordinates
-    lat, lon = GPS_read(master)
+    lat, lon = read_global_position(master)
+    # x, y = read_local_position(master)
 
     # get list of coordinates to follow
-    coor_list = gen_coordinate_list(lat, lon, 10, 100, 10)
+    # coor_list = gen_coordinate_list(lat, lon, 10, 100, 10)
+    pos_list = gen_position_list(10, 100, 20)
 
     # set mode to guided
     print("Setting mode guided")
@@ -77,41 +79,69 @@ def main():
     # removing may cause drone to land immediately due to sending a desination too soon
     sleep(5)
 
-    # loop through coordinates
-    for coor in coor_list:
-        # send next destination 
-        target_lat, target_lon = coor[0], coor[1]
-        send_position_target(master, target_lat, target_lon, ALT)
+    # while True:
+    #     xx, yy = read_local_position(master)
+    #     print(f"x local: {xx}; y local: {yy}")
+    #     sleep(1)
 
-        # wait for dest reached
+    for pos in pos_list:
+        target_x, target_y = pos[0], pos[1]
+        send_local_position_target(master, target_x, target_y, -ALT)
+
         while True:
-            new_lat, new_lon = GPS_read(master)
+            new_x, new_y = read_local_position(master)
 
-            # calculate errors based on GPS readings
-            lat_err = abs(new_lat - target_lat)
-            lon_err = abs(new_lon - target_lon)
+            x_err = abs(new_x - target_x)
+            y_err = abs(new_y - target_y)
 
-            print(f"Lat error: {lat_err}     Lon error: {lon_err}")
+            print(f"x error: {x_err}; y error: {y_err}")
 
-            # check for within error threshold 
-            # TODO find a better way to check location
-            if lat_err <= 5e-7 and lon_err <= 5e-7:
+            if x_err < 0.1 and y_err < 0.1:
                 break
+
+    # loop through coordinates
+    # for coor in coor_list:
+    #     # send next destination 
+    #     target_lat, target_lon = coor[0], coor[1]
+    #     send_global_position_target(master, target_lat, target_lon, ALT)
+    #
+    #     # wait for dest reached
+    #     while True:
+    #         new_lat, new_lon = read_global_position(master)
+    #
+    #         # calculate errors based on GPS readings
+    #         lat_err = abs(new_lat - target_lat)
+    #         lon_err = abs(new_lon - target_lon)
+    #
+    #         print(f"Lat error: {lat_err}     Lon error: {lon_err}")
+    #
+    #         # check for within error threshold 
+    #         # TODO find a better way to check location
+    #         if lat_err <= 5e-7 and lon_err <= 5e-7:
+    #             break
 
     # loop forever
     while True:
         pass
 
-
-def GPS_read(MavConn: mavutil.mavfile) -> Tuple[float, float]:
+def read_local_position(MavConn: mavutil.mavfile) -> Tuple[float, float]:
     '''
-    Read GPS coordinates.
+    Read local position.
     '''
     while True:
-        gps = MavConn.recv_match(type="GPS_RAW_INT", blocking=True)
-        if gps:
+        pos = MavConn.recv_match(type="LOCAL_POSITION_NED", blocking=True)
+        if pos:
+            return pos.x, pos.y
+
+def read_global_position(MavConn: mavutil.mavfile) -> Tuple[float, float]:
+    '''
+    Read global position.
+    '''
+    while True:
+        pos = MavConn.recv_match(type="GLOBAL_POSITION_INT", blocking=True)
+        if pos:
             # scale down to real coordinates
-            return float(gps.lat) * 1e-7, float(gps.lon) * 1e-7
+            return float(pos.lat) * 1e-7, float(pos.lon) * 1e-7
 
 
 def GPS_wait(MavConn: mavutil.mavfile) -> None:
@@ -170,23 +200,59 @@ def send_arm_command(MavConn: mavutil.mavfile) -> None:
         0, # param6
         0) # param7
 
-
-def send_position_target(MavConn: mavutil.mavfile, Lat: float, Lon: float, Alt: int) -> None:
+def send_local_position_target(MavConn: mavutil.mavfile, x: int, y: int, z: int) -> None:
     '''
-    Send new position target.
+    Send new local position target.
+    '''
+    mask = (
+            # mavutil.mavlink.POSITION_TARGET_TYPEMASK_Z_IGNORE |
+            mavutil.mavlink.POSITION_TARGET_TYPEMASK_VX_IGNORE |
+            mavutil.mavlink.POSITION_TARGET_TYPEMASK_VY_IGNORE |
+            mavutil.mavlink.POSITION_TARGET_TYPEMASK_VZ_IGNORE |
+            mavutil.mavlink.POSITION_TARGET_TYPEMASK_AX_IGNORE |
+            mavutil.mavlink.POSITION_TARGET_TYPEMASK_AY_IGNORE |
+            mavutil.mavlink.POSITION_TARGET_TYPEMASK_AZ_IGNORE |
+            mavutil.mavlink.POSITION_TARGET_TYPEMASK_YAW_IGNORE |
+            mavutil.mavlink.POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE
+            )
+
+    MavConn.mav.set_position_target_local_ned_send(
+        0, 
+        MavConn.target_system, 
+        MavConn.target_component,
+        mavutil.mavlink.MAV_FRAME_LOCAL_NED,
+        mask,
+        x, y, z, # x, y, z
+        0, 0, 0, 0, 0, 0, 0, 0
+        )
+
+
+def send_global_position_target(MavConn: mavutil.mavfile, Lat: float, Lon: float, Alt: int) -> None:
+    '''
+    Send new global position target.
     '''
     # pack lat/lon into integer
     lat_i = int(Lat * 1e7)
     lon_i = int(Lon * 1e7)
 
-    type_mask = 0b0000111111111000
+    # type_mask = 0b0000111111111000
+    mask = (
+            mavutil.mavlink.POSITION_TARGET_TYPEMASK_VX_IGNORE |
+            mavutil.mavlink.POSITION_TARGET_TYPEMASK_VY_IGNORE |
+            mavutil.mavlink.POSITION_TARGET_TYPEMASK_VZ_IGNORE |
+            mavutil.mavlink.POSITION_TARGET_TYPEMASK_AX_IGNORE |
+            mavutil.mavlink.POSITION_TARGET_TYPEMASK_AY_IGNORE |
+            mavutil.mavlink.POSITION_TARGET_TYPEMASK_AZ_IGNORE |
+            mavutil.mavlink.POSITION_TARGET_TYPEMASK_YAW_IGNORE |
+            mavutil.mavlink.POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE
+            )
 
     MavConn.mav.set_position_target_global_int_send(
         0,                              # time_boot_ms (ignored)
         MavConn.target_system,
         MavConn.target_component,
         mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
-        type_mask,
+        mask,
         lat_i, lon_i, Alt,              # position
         0, 0, 0,                        # velocity (ignored)
         0, 0, 0,                        # acceleration (ignored)
@@ -256,6 +322,30 @@ def gen_coordinate_list(StartLat: float, StartLon: float, NumPasses: int, Length
         prev_coors = (next_lat, next_lon)
 
         prev_coors = (next_lat, next_lon)
+
+    return retval
+
+
+def gen_position_list(NumPasses: int, Length: int, Width: int) -> list[Tuple]:
+    '''
+    Generate a list of points (x, y)
+    '''
+    retval = [] 
+    coor = (0, 0)
+
+    for _ in range (int(NumPasses / 2)):
+        # up 
+        coor = (coor[0] + Length, coor[1])
+        retval.append(coor)
+
+        coor = (coor[0], coor[1] + Width)
+        retval.append(coor)
+
+        coor = (coor[0] - Length, coor[1])
+        retval.append(coor)
+
+        coor = (coor[0], coor[1] + Width)
+        retval.append(coor)
 
     return retval
 
