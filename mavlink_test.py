@@ -28,7 +28,7 @@ def main():
     # comment out if running SITL separately
     # ** this must happen after TCP listener initiated **
     # runs MAVproxy ground station, which forwards connection to this script via port 14550
-    # subprocess.Popen(["sim_vehicle.py", "-v", "ArduCopter", "-C", "tcp:localhost:5760", "--out", "tcp:localhost:14550", "--console", "--map"])
+    subprocess.Popen(["sim_vehicle.py", "-v", "ArduCopter", "-C", "tcp:localhost:5760", "--out", "tcp:localhost:14550", "--console", "--map"])
 
     master.wait_heartbeat()
     print("Heartbeat received")
@@ -86,7 +86,7 @@ def main():
 
     for pos in pos_list:
         target_x, target_y = pos[0], pos[1]
-        send_local_position_target(master, target_x, target_y, -ALT)
+        send_local_position_target(master, target_x, target_y, -ALT, 0)
 
         while True:
             new_x, new_y = read_local_position(master)
@@ -124,6 +124,19 @@ def main():
     while True:
         pass
 
+
+def lock_yaw(MavConn: mavutil.mavfile, angle) -> None:
+    '''
+    Lock yaw.
+    '''
+    MavConn.mav.mav_cmd_condition_yaw(
+        angle,       # degrees
+        180,        # angular speed 
+        0,          # shortest direction 
+        0,          # absolute angle 
+        0, 0, 0     # empty
+        )
+
 def read_local_position(MavConn: mavutil.mavfile) -> Tuple[float, float]:
     '''
     Read local position.
@@ -132,6 +145,7 @@ def read_local_position(MavConn: mavutil.mavfile) -> Tuple[float, float]:
         pos = MavConn.recv_match(type="LOCAL_POSITION_NED", blocking=True)
         if pos:
             return pos.x, pos.y
+
 
 def read_global_position(MavConn: mavutil.mavfile) -> Tuple[float, float]:
     '''
@@ -200,19 +214,18 @@ def send_arm_command(MavConn: mavutil.mavfile) -> None:
         0, # param6
         0) # param7
 
-def send_local_position_target(MavConn: mavutil.mavfile, x: int, y: int, z: int) -> None:
+def send_local_position_target(MavConn: mavutil.mavfile, x: float, y: float, z: float, yaw: float) -> None:
     '''
     Send new local position target.
     '''
     mask = (
-            # mavutil.mavlink.POSITION_TARGET_TYPEMASK_Z_IGNORE |
             mavutil.mavlink.POSITION_TARGET_TYPEMASK_VX_IGNORE |
             mavutil.mavlink.POSITION_TARGET_TYPEMASK_VY_IGNORE |
             mavutil.mavlink.POSITION_TARGET_TYPEMASK_VZ_IGNORE |
             mavutil.mavlink.POSITION_TARGET_TYPEMASK_AX_IGNORE |
             mavutil.mavlink.POSITION_TARGET_TYPEMASK_AY_IGNORE |
             mavutil.mavlink.POSITION_TARGET_TYPEMASK_AZ_IGNORE |
-            mavutil.mavlink.POSITION_TARGET_TYPEMASK_YAW_IGNORE |
+            # mavutil.mavlink.POSITION_TARGET_TYPEMASK_YAW_IGNORE |
             mavutil.mavlink.POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE
             )
 
@@ -222,8 +235,10 @@ def send_local_position_target(MavConn: mavutil.mavfile, x: int, y: int, z: int)
         MavConn.target_component,
         mavutil.mavlink.MAV_FRAME_LOCAL_NED,
         mask,
-        x, y, z, # x, y, z
-        0, 0, 0, 0, 0, 0, 0, 0
+        x, y, z,    # x, y, z
+        0, 0, 0,    # vx, vy, vz
+        0, 0, 0,    # ax, ay, az
+        yaw, 0        # yaw, yaw rate
         )
 
 
@@ -273,7 +288,6 @@ def send_takeoff_command(MavConn: mavutil.mavfile, Alt: int) -> None:
             0,
             0,
             0,
-            # float('nan'),
             0,
             0, # lat 
             0, # lon 
