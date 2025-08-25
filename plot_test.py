@@ -19,9 +19,9 @@ def main():
     beacon_list: list[Beacon] = []
 
     # ADD beacons
-    # BEACON_LIST.append(Beacon(0, 0, 0, [1, 0, 0]))
-    # BEACON_LIST.append(Beacon(16, 16, 8, [1, 1, 0]))
-    # BEACON_LIST.append(Beacon(-12, -12, -8, [0, 0, -1]))
+    beacon_list.append(Beacon(0, 0, 0, [1, 0, 0]))
+    beacon_list.append(Beacon(16, 16, 8, [1, 1, 0]))
+    beacon_list.append(Beacon(-12, -12, -8, [0, 0, -1]))
     beacon_list.append(Beacon(0, 0, 0, (1.0, 1.0, 0.0)))
 
     # make 3D axes
