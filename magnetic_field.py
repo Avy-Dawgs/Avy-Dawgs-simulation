@@ -37,7 +37,15 @@ def B_vector_calc_cartesion(x: float, y: float, z: float, mx: float = 1, my: flo
     return retval[0], retval[1], retval[2]
 
 
-def B_beacons_cartesion(beacon_list: list[Beacon], x: float, y: float, z: float) -> Tuple[float, float, float]:
+@np.vectorize
+def B_magnitude_calc(u: float, v: float, w: float) -> float: 
+    '''
+    Calculate the magnitude of the magnetic field given vector componenents.
+    '''
+    return np.cbrt(u**2 + v**2 + w**2)
+
+
+def B_beacons_cartesion(beacon_list: list[Beacon], x: np.typing.NDArray, y: np.typing.NDArray, z: np.typing.NDArray) -> Tuple[float, float, float]:
     '''
     Calculate magnetic field vector at given cartesion coordinate given list of beacons.
     '''
